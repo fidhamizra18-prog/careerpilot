@@ -48,3 +48,4 @@ CareerPilot AI is an intelligent career navigation tool designed to help student
 
 ---
 *Created by Antigravity AI*
+# careerpilot
