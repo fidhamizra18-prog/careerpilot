@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import './index.css';
 import { generateCareerRoadmap } from './gemini.js';
+import { supabase } from './supabaseClient.js';
+import AuthPage from './Auth.jsx';
 
 // ─── Work Style Options ────────────────────────────────────────────────────────
 const WORK_STYLES = [
@@ -36,6 +38,7 @@ function Toast({ message, onClose }) {
 
 // ─── Main App ─────────────────────────────────────────────────────────────────
 export default function App() {
+  const [session, setSession] = useState(undefined);  // undefined = loading, null = logged out
   const [page, setPage] = useState('home');   // home | form | loading | results | saved
   const [profileStep, setProfileStep] = useState(1);
   const [profile, setProfile] = useState({
@@ -43,18 +46,57 @@ export default function App() {
   });
   const [results, setResults] = useState([]);
   const [savedReports, setSavedReports] = useState([]);
+
+  // ── Auth Session ────────────────────────────────────────────────────────────
+  useEffect(() => {
+    // Get current session on mount
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+    });
+    // Listen for auth state changes (login, logout, token refresh)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+      if (session?.user) {
+        const name = session.user.user_metadata?.full_name || session.user.email?.split('@')[0] || '';
+        setProfile(p => ({ ...p, name: p.name || name }));
+      }
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    setPage('home');
+    setSavedReports([]);
+    setResults([]);
+  };
   const [selectedReport, setSelectedReport] = useState(null);
   const [toast, setToast] = useState(null);
   const [error, setError] = useState(null);
   const [loadStep, setLoadStep] = useState(0);
 
-  // Load saved reports on mount
+  // Fetch reports when session changes
   useEffect(() => {
+    if (session?.user) {
+      fetchReports();
+    } else if (session === null) {
+      setSavedReports([]);
+    }
+  }, [session]);
+
+  const fetchReports = async () => {
     try {
-      const raw = localStorage.getItem('careerpilot_reports');
-      if (raw) setSavedReports(JSON.parse(raw));
-    } catch { /* ignore */ }
-  }, []);
+      const { data, error } = await supabase
+        .from('reports')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setSavedReports(data || []);
+    } catch (err) {
+      console.error('Error fetching reports:', err);
+    }
+  };
 
   const showToast = (msg) => setToast(msg);
   const closeToast = useCallback(() => setToast(null), []);
@@ -122,26 +164,54 @@ export default function App() {
   };
 
   // ── Save / Delete ───────────────────────────────────────────────────────────
-  const saveReport = () => {
+  const saveReport = async () => {
+    if (!session?.user) {
+      showToast('You must be logged in to save reports.');
+      return;
+    }
+
     const report = {
-      id: Date.now(),
+      user_id: session.user.id,
       date: new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
       name: profile.name,
       education: profile.education,
       careers: results,
+      user_profile: profile
     };
-    const updated = [report, ...savedReports];
-    setSavedReports(updated);
-    localStorage.setItem('careerpilot_reports', JSON.stringify(updated));
-    showToast('Report saved successfully!');
+
+    try {
+      const { data, error } = await supabase
+        .from('reports')
+        .insert([report])
+        .select();
+
+      if (error) throw error;
+
+      setSavedReports(prev => [data[0], ...prev]);
+      showToast('Report saved successfully!');
+    } catch (err) {
+      console.error('Error saving report:', err);
+      showToast('Failed to save report. Please try again.');
+    }
   };
 
-  const deleteReport = (id) => {
-    const updated = savedReports.filter(r => r.id !== id);
-    setSavedReports(updated);
-    localStorage.setItem('careerpilot_reports', JSON.stringify(updated));
-    if (selectedReport?.id === id) setSelectedReport(null);
-    showToast('Report deleted.');
+  const deleteReport = async (id) => {
+    try {
+      const { error } = await supabase
+        .from('reports')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+
+      const updated = savedReports.filter(r => r.id !== id);
+      setSavedReports(updated);
+      if (selectedReport?.id === id) setSelectedReport(null);
+      showToast('Report deleted.');
+    } catch (err) {
+      console.error('Error deleting report:', err);
+      showToast('Failed to delete report.');
+    }
   };
 
   const viewReport = (report) => {
@@ -152,7 +222,22 @@ export default function App() {
 
   const setSelected = (r) => setSelectedReport(r);
 
-  // ─────────────────────────────────────────────────────────────────────────────
+  // ── Auth Guard ───────────────────────────────────────────────────────────────
+  if (session === undefined) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#fafaff' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem' }}>
+          <div className="loader-ring"><div className="loader-emoji">🚀</div></div>
+          <p style={{ color: 'var(--text-muted)', fontWeight: 600, fontFamily: 'Inter, sans-serif' }}>Loading CareerPilot AI...</p>
+        </div>
+      </div>
+    );
+  }
+  if (!session) return <AuthPage />;
+
+  const userEmail = session.user?.email || '';
+  const userName = session.user?.user_metadata?.full_name || userEmail.split('@')[0];
+
   return (
     <div className="app-wrapper">
       {/* ── NAVBAR ── */}
@@ -175,12 +260,17 @@ export default function App() {
               My Reports {savedReports.length > 0 && <span className="ai-badge" style={{ fontSize: '0.6rem', marginLeft: '4px' }}>{savedReports.length}</span>}
             </button>
             <button className="btn btn-primary btn-sm" onClick={startForm}>Start Now</button>
+            <div className="nav-user">
+              <div className="nav-avatar" title={userEmail}>{userName.charAt(0).toUpperCase()}</div>
+              <button className="btn btn-outline btn-sm" onClick={handleLogout}>Log Out</button>
+            </div>
           </div>
         </div>
       </nav>
 
+
       <main>
-        {page === 'home' && <HomePage onStart={startForm} />}
+        {page === 'home' && <HomePage onStart={startForm} userName={userName} />}
         {page === 'form' && (
           <FormPage
             profile={profile}
@@ -228,7 +318,7 @@ export default function App() {
 }
 
 // ─── Page: Home ───────────────────────────────────────────────────────────────
-function HomePage({ onStart }) {
+function HomePage({ onStart, userName }) {
   return (
     <>
       <section className="hero">
@@ -240,6 +330,11 @@ function HomePage({ onStart }) {
                 <span className="hero-badge-dot"></span>
                 AI-Powered Career Navigation
               </div>
+              {userName && (
+                <p style={{ fontSize: '1rem', color: 'var(--text-muted)', marginBottom: '0.75rem', fontWeight: 600 }}>
+                  👋 Welcome back, <strong style={{ color: 'var(--primary)' }}>{userName}</strong>!
+                </p>
+              )}
               <h1>
                 Find Your <br />
                 <span className="text-gradient">Perfect Path</span>
@@ -255,6 +350,7 @@ function HomePage({ onStart }) {
                   Free · Under 3 minutes
                 </span>
               </div>
+
               <div className="hero-proof">
                 <div className="proof-item"><strong>3+</strong><span>Career Paths</span></div>
                 <div className="proof-divider"></div>

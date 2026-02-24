@@ -8,7 +8,7 @@ export const generateCareerRoadmap = async (userData) => {
     throw new Error("Gemini API key is not configured. Please add VITE_GEMINI_API_KEY to your .env file.");
   }
 
-  const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+  const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
   const prompt = `
     You are an elite career navigation AI. Based on the user profile below, suggest the top 3 most suitable career paths.

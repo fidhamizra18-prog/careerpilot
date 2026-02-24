@@ -1,26 +1,28 @@
--- SQL to create the roadmaps table in Supabase
+-- SQL to create the reports table in Supabase
 
-CREATE TABLE IF NOT EXISTS public.roadmaps (
+CREATE TABLE IF NOT EXISTS public.reports (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     created_at TIMESTAMPTZ DEFAULT now(),
-    career_id TEXT NOT NULL,
-    title TEXT NOT NULL,
-    match_score INTEGER,
-    reason TEXT,
-    skills JSONB,
-    roadmap JSONB,
-    user_profile JSONB,
-    saved_at TEXT
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    name TEXT,
+    education TEXT,
+    date TEXT,
+    careers JSONB,
+    user_profile JSONB
 );
 
 -- Enable Row Level Security (RLS)
-ALTER TABLE public.roadmaps ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.reports ENABLE ROW LEVEL SECURITY;
 
--- Create policy to allow anyone to insert (for MVP simplicity, usually you'd tie this to user_id)
-CREATE POLICY "Allow anonymous insert" ON public.roadmaps FOR INSERT WITH CHECK (true);
+-- Policies for Authenticated Users
+CREATE POLICY "Users can insert their own reports" ON public.reports 
+    FOR INSERT WITH CHECK (auth.uid() = user_id);
 
--- Create policy to allow anyone to select (for MVP simplicity)
-CREATE POLICY "Allow anonymous select" ON public.roadmaps FOR SELECT USING (true);
+CREATE POLICY "Users can view their own reports" ON public.reports 
+    FOR SELECT USING (auth.uid() = user_id);
 
--- Create policy to allow anyone to delete
-CREATE POLICY "Allow anonymous delete" ON public.roadmaps FOR DELETE USING (true);
+CREATE POLICY "Users can update their own reports" ON public.reports 
+    FOR UPDATE USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete their own reports" ON public.reports 
+    FOR DELETE USING (auth.uid() = user_id);
