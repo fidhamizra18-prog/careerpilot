@@ -39,7 +39,7 @@ function Toast({ message, onClose }) {
 // ─── Main App ─────────────────────────────────────────────────────────────────
 export default function App() {
   const [session, setSession] = useState(undefined);  // undefined = loading, null = logged out
-  const [page, setPage] = useState('home');   // home | form | loading | results | saved
+  const [page, setPage] = useState('home');   // home | welcome | form | loading | results | saved
   const [profileStep, setProfileStep] = useState(1);
   const [profile, setProfile] = useState({
     name: '', education: '', skills: '', interests: '', workStyle: 'remote', goal: ''
@@ -59,6 +59,10 @@ export default function App() {
       if (session?.user) {
         const name = session.user.user_metadata?.full_name || session.user.email?.split('@')[0] || '';
         setProfile(p => ({ ...p, name: p.name || name }));
+
+        if (_event === 'SIGNED_IN') {
+          setPage('welcome');
+        }
       }
     });
     return () => subscription.unsubscribe();
@@ -270,6 +274,7 @@ export default function App() {
 
 
       <main>
+        {page === 'welcome' && <WelcomePage onContinue={goHome} userName={userName} />}
         {page === 'home' && <HomePage onStart={startForm} userName={userName} />}
         {page === 'form' && (
           <FormPage
@@ -705,6 +710,40 @@ function SavedPage({ reports, onView, onDelete, onStart, onHome }) {
 
         <div style={{ marginTop: '2rem' }}>
           <button className="btn btn-ghost" onClick={onHome}>← Back to Home</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Page: Welcome ────────────────────────────────────────────────────────────
+function WelcomePage({ onContinue, userName }) {
+  return (
+    <div className="welcome-page animate-fade-up">
+      <div className="container">
+        <div className="welcome-content glass">
+          <div className="welcome-icon">🌠</div>
+          <h1>Welcome to CareerPilot AI, {userName}!</h1>
+          <p>We're excited to help you navigate your professional journey. Our AI is ready to analyze your skills and build a personalized roadmap just for you.</p>
+
+          <div className="welcome-steps-brief">
+            <div className="brief-step">
+              <span className="brief-num">1</span>
+              <span>Tell us about your background</span>
+            </div>
+            <div className="brief-step">
+              <span className="brief-num">2</span>
+              <span>AI analyzes your potential</span>
+            </div>
+            <div className="brief-step">
+              <span className="brief-num">3</span>
+              <span>Get your 6-month roadmap</span>
+            </div>
+          </div>
+
+          <button className="btn btn-primary btn-lg" onClick={onContinue}>
+            Let's Get Started →
+          </button>
         </div>
       </div>
     </div>
